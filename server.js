@@ -156,11 +156,18 @@ io.on("connection", (socket) => {
       !roomId ||
       !videoState ||
       typeof videoState.isPlaying !== 'boolean' ||
-      typeof videoState.currentTime !== 'number'
+      !Number.isFinite(Number(videoState.currentTime)) // Handle both string and number inputs
     ) {
       console.warn('Invalid video state update:', data);
       return;
     }
+
+    // Convert to number if needed
+    const validatedState = {
+      isPlaying: videoState.isPlaying,
+      currentTime: Number(videoState.currentTime),
+      timestamp: videoState.timestamp
+    };
 
     const room = rooms.get(roomId);
     const now = Date.now();
