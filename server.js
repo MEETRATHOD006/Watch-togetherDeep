@@ -196,7 +196,6 @@ io.on("connection", (socket) => {
         ...videoState,
         timestamp: now
       });
-    }
   });
   
   socket.on('video-loaded', (data) => {
