@@ -173,7 +173,7 @@ io.on("connection", (socket) => {
   socket.on('video-loaded', (data) => {
     const { roomId, videoId } = data;
     if (!rooms.has(roomId)) return;
-
+  
     const room = rooms.get(roomId);
     room.videoState = {
       isPlaying: true,
@@ -182,7 +182,11 @@ io.on("connection", (socket) => {
       timestamp: Date.now()
     };
     
-    socket.to(roomId).emit('video-sync', room.videoState);
+    // Broadcast to ALL clients including the sender
+    io.to(roomId).emit('video-load', {  // Change event name
+      videoId: videoId,
+      timestamp: Date.now()
+    });
   });
     
     socket.on('video-seek', (data) => {
