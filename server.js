@@ -121,11 +121,21 @@ io.on("connection", (socket) => {
   });
 
   socket.on("join-room", (roomId, userId) => {
+    if (!rooms.has(roomId)) {
+      rooms.set(roomId, createRoomState());
+    }
+
+    const room = rooms.get(roomId);
+    room.participants.add(socket.id);
     socket.join(roomId);
+
+    // Send current video state to new participant
+    socket.emit("video-sync", room.videoState); // Fixed this line
+    console.log(`User ${userId} joined room ${roomId}`);
+    
     io.to(roomId).emit('user-connected', userId);
     console.log(`User ${userId} joined room ${roomId}`);
     
-    socket.emit("video-sync", rooms.videoState);
     // // Send current video and time if any
     // if (rooms[roomId] && rooms[roomId].videoId) {
     //   socket.emit('video-sync', rooms[roomId].videoId, rooms[roomId].currentTime);
