@@ -46,8 +46,7 @@ function startDriftDetection() {
   driftCheckInterval = setInterval(() => {
     if (player && !isSyncing && player.getPlayerState() === YT.PlayerState.PLAYING) {
       const currentTime = player.getCurrentTime();
-      const serverTime = rooms.get(roomId)?.videoState?.timestamp || Date.now();
-      const expectedTime = currentVideoTime + (Date.now() - serverTime) / 1000;
+      const expectedTime = currentVideoTime + (Date.now() - lastServerTimestamp) / 1000;
       
       if (Math.abs(currentTime - expectedTime) > 0.5) {
         console.log('Client drift detected, re-syncing...');
