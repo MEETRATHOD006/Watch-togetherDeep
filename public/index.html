@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Watch Together</title>
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"
+    />
+  </head>
+  <body>
+    <header>
+      <div id="logo">
+        <i class="fa-solid fa-compact-disc" style="font-size: 25px"></i>
+        <div>Watch Together</div>
+      </div>
+      <div class="creatJoinBtn">
+        <button id="create">Create Room</button>
+        <button id="join">Join</button>
+      </div>
+    </header>
+
+    <!-- Popup for Joining -->
+    <div id="join-popup" style="display: none">
+      <div class="popup-content">
+        <h3>Enter Room ID to Join</h3>
+        <input type="text" id="joinRoomId" class="popupInput" placeholder="Enter Room ID" />
+        <button id="joinRoom" class="popupButtons">Join Room</button>
+        <div id="joinError" style="color: red; display: none">
+          Invalid Room ID
+        </div>
+        <button id="closePopup">Close</button>
+      </div>
+    </div>
+
+    <!-- Room Name and Admin Name Popup -->
+    <div id="createRoomPopup" style="display: none">
+      <div class="popup-content">
+        <div style="display: flex;">
+          <label for="roomName">Room Name:</label>
+          <input type="text" id="roomName" class="popupInput" required />
+        </div>
+        <div style="display: flex; margin-top: 20px;">
+          <label for="adminName">Admin Name:</label>
+          <input type="text" id="adminName" class="popupInput" required />
+        </div>
+        <button id="createRoomConfirm" class="popupButtons">Create Room</button>
+        <button id="closeCreateRoomPopup" class="popupButtons" style="margin-top: 15px;">Cancel</button>
+      </div>
+    </div>
+
+    <div class="mainContainder">
+      <div class="peopleAndChat">
+        <div class="twikVideoAndChat">
+          <div id="videocalls"><i class="fa-solid fa-video"></i></div>
+          <div id="chats"><i class="fa-regular fa-message"></i></div>
+        </div>
+        <div id="displayvideocalls">
+          
+        </div>
+      </div>
+
+      <div id="video-container">
+        <input type="text" id="searchbar" placeholder="Enter YouTube URL"></input>
+        <ul id="suggestions"></ul>
+        <div id="video">
+          <iframe
+            id="videoPlayer"
+            width="100%"
+            height="100%"
+            frameborder="0"
+            allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+            src="https://www.youtube.com/embed/https://www.youtube.com/embed/3wBEUuV7BYg?si=4Pzm2Ag5SQ2WPu1G?enablejsapi=1&autoplay=1"
+          ></iframe>
+
+          <!-- Custom Controls -->
+          <div id="custom-controls">
+            <i id="playPauseIcon" class="fa-solid fa-play"></i>
+            <input type="range" id="videoBar" min="0" max="100"/>
+            <i class="fa-solid fa-gear">
+              <ul id="setting">
+                <li id="fullScreen">Full screen</li>
+                <li id="playbackSpeed">Playback speed
+                  <ul id="playbackSpeed-menu">
+
+                  </ul>
+                </li>
+                <li id="Quality">Quality
+                  <ul id="quality-menu">
+                    <li>This feature is no longer Available</li>
+                  </ul>
+                </li>
+              </ul>
+            </i>
+            <i class="fa-solid fa-volume-high">
+              <input type="range" id="volumeBar" min="0" max="100" onchange="setVolume(this.value)" />
+            </i>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script defer src="https://unpkg.com/peerjs@1.2.0/dist/peerjs.min.js"></script>
+    <script src="/socket.io/socket.io.js" defer></script>
+    <script src="script.js" defer></script>
+  </body>
+</html>
