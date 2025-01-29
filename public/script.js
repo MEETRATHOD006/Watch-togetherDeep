@@ -3,6 +3,8 @@ const socket = io("https://watch-togetherdeep.onrender.com"); // Update the URL 
 
 const peers = {}; // Store peer connections
 let localStream; // Store the local video stream
+let isSyncing = false; // Flag to prevent sync loops
+let lastServerTimestamp = 0; // Track server time for latency calculation
 
 // Connection established
 socket.on("connect", () => {
@@ -27,7 +29,33 @@ const videoPlayerContainer = document.getElementById('videoPlayer').parentElemen
 const overlay = document.createElement('div'); // Create an overlay to intercept clicks
 const playbackSpeedMenu = document.getElementById('playbackSpeed-menu');
 
-searchbar.disabled = true; 
+searchbar.disabled = true;
+
+// ---------------------- Improved Sync Functions ----------------------
+function calculateLatency(serverTimestamp) {
+  const now = Date.now();
+  return Math.round((now - serverTimestamp) / 2);
+}
+
+function syncWithServerState(videoState) {
+  if (!player || isSyncing) return;
+  
+  isSyncing = true;
+  const latency = calculateLatency(videoState.timestamp);
+  const targetTime = videoState.currentTime + (latency / 1000);
+
+  // Only adjust if difference is significant (>500ms)
+  if (Math.abs(player.getCurrentTime() - targetTime) > 0.5) {
+    player.seekTo(targetTime, true);
+    console.log(`Adjusted playback: ${targetTime.toFixed(2)}s (${latency}ms latency)`);
+  }
+
+  if (videoState.isPlaying !== (player.getPlayerState() === YT.PlayerState.PLAYING)) {
+    videoState.isPlaying ? player.playVideo() : player.pauseVideo();
+  }
+
+  setTimeout(() => isSyncing = false, 100);
+}
 
 // Function to extract room ID from URL
 function getRoomIdFromURL() {
@@ -147,17 +175,20 @@ if (roomId) {
   });
 
   // Listen for video-sync event to sync the video across users
-  socket.on('video-sync', (videoId, currentTime, isPlaying) => {
-    if (currentVideoId === videoId) return;  // Don't reload if the video is already the same
-  
-    console.log(`Syncing video for all users: ${videoId}`);
-    loadVideo(videoId);
+  // ---------------------- Modified Socket Handlers ----------------------
+  socket.on('video-sync', (videoState) => {
+    if (!isSyncing) {
+      console.log('Received server sync:', videoState);
+      syncWithServerState(videoState);
+      lastServerTimestamp = videoState.timestamp;
+    }
   });
   
-  socket.on('video-seeked', (roomId, videoBarValue) => {
-    const newTime = videoBarValue;
-    player.seekTo(newTime, true);
-    console.log(`Seeked video to ${newTime}`);
+  socket.on('video-seeked', (videoState) => {
+    if (!isSyncing) {
+      console.log('Received seek update:', videoState);
+      syncWithServerState(videoState);
+    }
   });
   
   socket.on('video-paused', (roomId, currentTime) => {
@@ -171,7 +202,6 @@ if (roomId) {
     player.seekTo(currentTime, true);
     console.log('Video played');
   });
-
   
 } else {
   console.log("No room detected in the URL. Displaying default interface.");
@@ -456,38 +486,52 @@ function loadVideo(videoId) {
     videoId: videoId,
     events: {
       onReady: (event) => {
-        // Start playing the video when ready
         event.target.playVideo();
-        
-        // Sync the videoBar with the video's progress
         const duration = event.target.getDuration();
         videoBar.max = duration;
-        videoBar.value = 0; // Start at 0
-        currentVideoTime = 0;
-        
-        // Set the initial volume to 50%
+        videoBar.value = 0;
         player.setVolume(50);
-        volumeBar.value = 50; // Sync the volume bar with the initial volume
-        
-        // Populate speed menu once the video is ready
+        document.getElementById('volumeBar').value = 50;
         populatePlaybackSpeedMenu();
-        syncInterval = setInterval(() => {
-          if (!isUserInteracting && player && typeof player.getCurrentTime === 'function') {
-            const currentTime = player.getCurrentTime();
-            videoBar.value = currentTime;
-          }
-        }, 500); // Update every 500ms
       },
       onStateChange: (event) => {
-        const currentState = event.data;
+        if (isSyncing) return;
         
-        // Check for PAUSED state
-        if (event.data === YT.PlayerState.ENDED) {
-          clearInterval(syncInterval); // Stop syncing when the video ends
-        }
-      },
-    },
+        const state = event.data;
+        const currentTime = player.getCurrentTime();
+        
+        // Broadcast state changes to server
+        socket.emit('video-state-update', { 
+          roomId,
+          videoState: {
+            isPlaying: state === YT.PlayerState.PLAYING,
+            currentTime: currentTime,
+            timestamp: Date.now()
+          }
+        });
+      }
+    }
   });
+
+  // ---------------------- Improved Progress Sync ----------------------
+  setInterval(() => {
+    if (player && !isSyncing) {
+      const currentTime = player.getCurrentTime();
+      const expectedTime = currentVideoTime + (Date.now() - lastServerTimestamp) / 1000;
+      
+      if (Math.abs(currentTime - expectedTime) > 0.5) {
+        console.log('Client drift detected, re-syncing...');
+        socket.emit('video-state-update', {
+          roomId,
+          videoState: {
+            isPlaying: player.getPlayerState() === YT.PlayerState.PLAYING,
+            currentTime: currentTime,
+            timestamp: Date.now()
+          }
+        });
+      }
+    }
+  }, 3000);
 
   // Add event listener to the full screen button
   fullScreenBtn.addEventListener('click', toggleFullScreen);
@@ -497,22 +541,6 @@ function loadVideo(videoId) {
       player.setVolume(value); // Set the player volume to the new value
     }
   };
-
-  // Update video progress when the user interacts with the videoBar
-  videoBar.addEventListener('mousedown', () => {
-    isUserInteracting = true; // Pause syncing when the user starts interacting
-  });
-
-  videoBar.addEventListener('change', () => {
-    if (player && typeof player.seekTo === 'function') {
-      const newTime = videoBar.value;
-      if (Math.abs(newTime - lastSentTime) > 1) {
-        lastSentTime = newTime; // Update last sent time
-        player.seekTo(newTime, true);
-        socket.emit('video-seek', { roomId, videoBarValue: newTime });
-      }
-    }
-  });
 
   videoBar.addEventListener('mouseup', () => {
     isUserInteracting = false; // Resume syncing when the user stops interacting
@@ -526,25 +554,36 @@ function loadVideo(videoId) {
     isUserInteracting = false; // Resume syncing after touch interaction
   });
 
-  playPauseIcon.addEventListener('click', () => {
-    if (player) {
-      if (player.getPlayerState() === 1) {
-        playPauseIcon.classList.remove('fa-pause');
-        playPauseIcon.classList.add('fa-play');
-        lastPlayerState = YT.PlayerState.PAUSED; // Update state manually
-        socket.emit('video-pause', {roomId, currentTime: player.getCurrentTime()});
-        console.log('pause emite')
-        player.pauseVideo();
-      } else {
-        playPauseIcon.classList.remove('fa-play');
-        playPauseIcon.classList.add('fa-pause');
-        lastPlayerState = YT.PlayerState.PLAYING; // Update state manually
-        socket.emit('video-play', {roomId, currentTime: player.getCurrentTime()});
-        console.log('playe emite')
-        player.playVideo();
-      }
-      
+  // ---------------------- Modified Event Handlers ----------------------
+  videoBar.addEventListener('input', () => {
+    if (!player || isSyncing) return;
+    
+    const newTime = videoBar.value;
+    if (Math.abs(newTime - lastSentTime) > 0.5) {
+      socket.emit('video-state-update', {
+        roomId,
+        videoState: {
+          isPlaying: player.getPlayerState() === YT.PlayerState.PLAYING,
+          currentTime: newTime,
+          timestamp: Date.now()
+        }
+      });
+      lastSentTime = newTime;
     }
+  });
+  
+  playPauseIcon.addEventListener('click', () => {
+    if (!player || isSyncing) return;
+    
+    const isPlaying = player.getPlayerState() === YT.PlayerState.PLAYING;
+    socket.emit('video-state-update', {
+      roomId,
+      videoState: {
+        isPlaying: !isPlaying,
+        currentTime: player.getCurrentTime(),
+        timestamp: Date.now()
+      }
+    });
   });
 
 }
