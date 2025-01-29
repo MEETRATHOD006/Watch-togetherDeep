@@ -585,6 +585,13 @@ function loadVideo(videoId) {
         document.getElementById('volumeBar').value = 50;
         populatePlaybackSpeedMenu();
         startDriftDetection(); // Start drift detection
+
+        syncInterval = setInterval(() => {
+          if (!isUserInteracting && player && typeof player.getCurrentTime === 'function') {
+            const currentTime = player.getCurrentTime();
+            videoBar.value = currentTime;
+          }
+        }, 500); // Update every 500ms
       },
       onStateChange: (event) => {
         if (!isPlayerReady) return;
