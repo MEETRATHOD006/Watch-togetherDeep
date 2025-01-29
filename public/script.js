@@ -1,5 +1,5 @@
 // Import Socket.IO client
-const socket = io("https://watch-togethertest.onrender.com"); // Update the URL as per your server
+const socket = io("https://watch-togetherdeep.onrender.com"); // Update the URL as per your server
 
 const peers = {}; // Store peer connections
 let localStream; // Store the local video stream
