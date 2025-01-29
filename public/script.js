@@ -38,6 +38,11 @@ function calculateLatency(serverTimestamp) {
 }
 
 function syncWithServerState(videoState) {
+  if (!videoState || !videoState.timestamp) {
+    console.warn('Received invalid video state:', videoState);
+    return;
+  }
+  
   if (!player || isSyncing) return;
   
   isSyncing = true;
