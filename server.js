@@ -152,6 +152,16 @@ io.on("connection", (socket) => {
     const { roomId, videoState } = data;
     if (!rooms.has(roomId)) return;
 
+    if (
+      !roomId ||
+      !videoState ||
+      typeof videoState.isPlaying !== 'boolean' ||
+      typeof videoState.currentTime !== 'number'
+    ) {
+      console.warn('Invalid video state update:', data);
+      return;
+    }
+
     const room = rooms.get(roomId);
     const now = Date.now();
     
