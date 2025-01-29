@@ -22,7 +22,23 @@ pool.connect()
     process.exit(1);
   });
 
-const rooms = {}; // Stores room data including the current videoId
+// ---------------------- Improved Room State Management ----------------------
+const rooms = new Map(); // Stores room data with timestamped video states
+
+const createRoomState = () => ({
+  videoState: {
+    isPlaying: false,
+    currentTime: 0,
+    videoId: null,
+    timestamp: Date.now()
+  },
+  participants: new Set()
+});
+
+// ---------------------- Synchronization Constants ----------------------
+const SYNC_INTERVAL = 5000; // 5 seconds
+const MAX_TIME_DIFF = 500; // 500ms maximum allowed latency
+
 
 // Create Room
 app.post("/create_room", async (req, res) => {
@@ -108,28 +124,56 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     io.to(roomId).emit('user-connected', userId);
     console.log(`User ${userId} joined room ${roomId}`);
-
-    // Send current video and time if any
-    if (rooms[roomId] && rooms[roomId].videoId) {
-      socket.emit('video-sync', rooms[roomId].videoId, rooms[roomId].currentTime);
-    }
+    
+    socket.emit("video-sync", room.videoState);
+    // // Send current video and time if any
+    // if (rooms[roomId] && rooms[roomId].videoId) {
+    //   socket.emit('video-sync', rooms[roomId].videoId, rooms[roomId].currentTime);
+    // }
     
     socket.on("disconnect", () => {
       io.to(roomId).emit('user-disconnected', userId)
       console.log("User disconnected:", socket.id);
     });
   });
+
+  // ---------------------- Video State Handling ----------------------
+  socket.on('video-state-update', (data) => {
+    const { roomId, videoState } = data;
+    if (!rooms.has(roomId)) return;
+
+    const room = rooms.get(roomId);
+    const now = Date.now();
+    
+    // Only update if the new state is fresher
+    if (videoState.timestamp > room.videoState.timestamp) {
+      room.videoState = {
+        ...videoState,
+        timestamp: now // Update with server timestamp
+      };
+
+      // Broadcast to other clients with server-adjusted time
+      socket.to(roomId).emit('video-sync', {
+        ...videoState,
+        timestamp: now
+      });
+    }
+  });
   
-    // Store the current video state for each room
-    socket.on('video-loaded', (data) => {
-      const { roomId, videoId } = data;
-      if (!rooms[roomId]) rooms[roomId] = {};
-      
-      rooms[roomId].videoId = videoId;
-      rooms[roomId].currentTime = 0;
-      rooms[roomId].isPlaying = false;
-      socket.to(roomId).emit('video-sync', videoId, rooms[roomId].currentTime, rooms[roomId].isPlaying);
-    });
+  socket.on('video-loaded', (data) => {
+    const { roomId, videoId } = data;
+    if (!rooms.has(roomId)) return;
+
+    const room = rooms.get(roomId);
+    room.videoState = {
+      isPlaying: true,
+      currentTime: 0,
+      videoId: videoId,
+      timestamp: Date.now()
+    };
+    
+    socket.to(roomId).emit('video-sync', room.videoState);
+  });
     
     socket.on('video-seek', (data) => {
       const { roomId, videoBarValue } = data;
@@ -160,5 +204,12 @@ io.on("connection", (socket) => {
 
 });
 
+setInterval(() => {
+  rooms.forEach((room, roomId) => {
+    if (room.participants.size > 0) {
+      io.to(roomId).emit('video-sync', room.videoState);
+    }
+  });
+}, SYNC_INTERVAL);
 
 server.listen(9000, () => console.log("Server running on port 9000"));
