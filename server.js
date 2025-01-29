@@ -172,12 +172,6 @@ io.on("connection", (socket) => {
     const room = rooms.get(roomId);
     const now = Date.now();
     
-    // Add acknowledgement handler
-    const ack = () => acknowledge({ 
-      status: 'ok', 
-      timestamp: now 
-    });
-    
     // Only update if the new state is fresher
     // For paused state, freeze the currentTime
     if (!videoState.isPlaying) {
@@ -187,14 +181,12 @@ io.on("connection", (socket) => {
         videoId: room.videoState.videoId,
         timestamp: now
       };
-      ack();
     } else {
       if (videoState.timestamp > room.videoState.timestamp) {
         room.videoState = {
           ...videoState,
           timestamp: now
         };
-        ack();
       }
     }
 
