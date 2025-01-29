@@ -38,59 +38,45 @@ function calculateLatency(serverTimestamp) {
 }
 
 function syncWithServerState(videoState) {
-  // Add validation for videoState
-  if (!videoState || typeof videoState !== 'object') {
-    console.warn('Invalid video state received:', videoState);
+  if (!videoState || !videoState.timestamp) {
+    console.warn('Invalid video state received');
     return;
   }
 
-  // Validate required properties
-  if (
-    typeof videoState.timestamp !== 'number' ||
-    typeof videoState.currentTime !== 'number'
-  ) {
-    console.warn('Invalid video state properties:', videoState);
-    return;
-  }
-
-  // Ensure player is initialized
+  // Ensure player is fully initialized
   if (!player || typeof player.getCurrentTime !== 'function') {
-    console.warn('YouTube player is not ready');
+    console.log('Player not ready yet');
     return;
   }
+
+  // Validate numerical values
+  const currentTime = Number(videoState.currentTime) || 0;
+  const latency = calculateLatency(videoState.timestamp);
+  const targetTime = currentTime + (latency / 1000);
 
   if (isSyncing) return;
-
   isSyncing = true;
 
-  // Calculate latency and target time
-  const latency = calculateLatency(videoState.timestamp);
-  const targetTime = parseFloat(videoState.currentTime) + parseFloat(latency / 1000);
-
-  // Validate targetTime
-  if (isNaN(targetTime)) {
-    console.warn('Invalid target time calculation:', {
-      currentTime: videoState.currentTime,
-      latency,
-      targetTime,
-    });
-    isSyncing = false;
-    return;
+  // Only adjust if difference is significant
+  if (Math.abs(player.getCurrentTime() - targetTime) > 0.5) {
+    console.log(`Syncing to ${targetTime.toFixed(2)}s`);
+    try {
+      player.seekTo(targetTime, true);
+    } catch (e) {
+      console.error('Seek failed:', e);
+    }
   }
 
-  // Only adjust if difference is significant (>500ms)
-  const currentTime = player.getCurrentTime();
-  if (Math.abs(currentTime - targetTime) > 0.5) {
-    console.log(`Adjusting playback: ${targetTime.toFixed(2)}s (${latency}ms latency)`);
-    player.seekTo(targetTime, true);
-  }
-
-  // Sync play/pause state
+  // Handle play/pause state
   if (videoState.isPlaying !== (player.getPlayerState() === YT.PlayerState.PLAYING)) {
-    videoState.isPlaying ? player.playVideo() : player.pauseVideo();
+    try {
+      videoState.isPlaying ? player.playVideo() : player.pauseVideo();
+    } catch (e) {
+      console.error('Play/pause failed:', e);
+    }
   }
 
-  setTimeout(() => (isSyncing = false), 100);
+  setTimeout(() => isSyncing = false, 100);
 }
 
 // Function to extract room ID from URL
@@ -213,6 +199,10 @@ if (roomId) {
   // Listen for video-sync event to sync the video across users
   // ---------------------- Modified Socket Handlers ----------------------
   socket.on('video-sync', (videoState) => {
+    if (!isPlayerReady) {
+      console.log('Ignoring sync - player not ready');
+      return;
+    }
     if (!isSyncing) {
       console.log('Received server sync:', videoState);
       syncWithServerState(videoState);
@@ -521,11 +511,13 @@ function loadVideo(videoId) {
   let isPauseEventSent = false;
   let lastPlayerState = null;
   let videoloadedready = true;
+  let isPlayerReady = false;
   // Initialize the YouTube Player API
   player = new YT.Player(videoPlayer, {
     videoId: videoId,
     events: {
       onReady: (event) => {
+        isPlayerReady = true;
         event.target.playVideo();
         const duration = event.target.getDuration();
         videoBar.max = duration;
@@ -535,6 +527,7 @@ function loadVideo(videoId) {
         populatePlaybackSpeedMenu();
       },
       onStateChange: (event) => {
+        if (!isPlayerReady) return;
         if (isSyncing) return;
         
         const state = event.data;
