@@ -42,6 +42,12 @@ function syncWithServerState(videoState) {
     console.warn('Received invalid video state:', videoState);
     return;
   }
+
+  // Handle video ID changes first
+  if (videoState.videoId && videoState.videoId !== currentVideoId) {
+    loadVideo(videoState.videoId);
+    return; // Let the video load process handle further sync
+  }
   
   if (!player || isSyncing) return;
   
@@ -207,6 +213,13 @@ if (roomId) {
     player.seekTo(currentTime, true);
     console.log('Video played');
   });
+
+  socket.on('video-load', ({ videoId }) => {
+  if (videoId && videoId !== currentVideoId) {
+    console.log('Loading new video from server:', videoId);
+    loadVideo(videoId);
+  }
+});
   
 } else {
   console.log("No room detected in the URL. Displaying default interface.");
@@ -469,9 +482,11 @@ function loadVideo(videoId) {
   videoContainer.appendChild(overlay); // Add the overlay to the video container
 
   currentVideoId = videoId; // Update to the new video ID
-  
-  // Emit to server to broadcast the video load event
-  socket.emit('video-loaded', { roomId, videoId });
+ 
+  if (!isSyncing) {
+    socket.emit('video-loaded', { roomId, videoId });
+    console.log("video loaded emit worked")
+  }
   
   // videoPlayer.document.close();
   if (player){
