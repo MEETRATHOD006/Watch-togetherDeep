@@ -125,7 +125,7 @@ io.on("connection", (socket) => {
     io.to(roomId).emit('user-connected', userId);
     console.log(`User ${userId} joined room ${roomId}`);
     
-    socket.emit("video-sync", room.videoState);
+    socket.emit("video-sync", rooms.videoState);
     // // Send current video and time if any
     // if (rooms[roomId] && rooms[roomId].videoId) {
     //   socket.emit('video-sync', rooms[roomId].videoId, rooms[roomId].currentTime);
