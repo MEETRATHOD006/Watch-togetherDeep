@@ -18,7 +18,7 @@ const searchbar = document.getElementById('searchbar');
 const suggestions = document.getElementById('suggestions');
 let player; let isPlaying; let videoLoaded = false; let currentVideoId = null;
 let currentVideoTime = 0; let videoloadedready = false; let lastSentTime = 0;
-const DEBOUNCE_TIME = 300;
+const DEBOUNCE_TIME = 300;   let isPlayerReady = false;
 
 const videoPlayer = document.getElementById('videoPlayer');
 const videoBar = document.getElementById('videoBar');
@@ -511,7 +511,6 @@ function loadVideo(videoId) {
   let isPauseEventSent = false;
   let lastPlayerState = null;
   let videoloadedready = true;
-  let isPlayerReady = false;
   // Initialize the YouTube Player API
   player = new YT.Player(videoPlayer, {
     videoId: videoId,
