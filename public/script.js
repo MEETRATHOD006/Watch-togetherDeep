@@ -37,6 +37,32 @@ function calculateLatency(serverTimestamp) {
   return Math.round((now - serverTimestamp) / 2);
 }
 
+// Replace the existing setInterval with this:
+let driftCheckInterval = null;
+
+function startDriftDetection() {
+  if (driftCheckInterval) clearInterval(driftCheckInterval);
+  
+  driftCheckInterval = setInterval(() => {
+    if (player && !isSyncing && player.getPlayerState() === YT.PlayerState.PLAYING) {
+      const currentTime = player.getCurrentTime();
+      const expectedTime = currentVideoTime + (Date.now() - lastServerTimestamp) / 1000;
+      
+      if (Math.abs(currentTime - expectedTime) > 0.5) {
+        console.log('Client drift detected, re-syncing...');
+        socket.emit('video-state-update', {
+          roomId,
+          videoState: {
+            isPlaying: true,
+            currentTime: currentTime,
+            timestamp: Date.now()
+          }
+        });
+      }
+    }
+  }, 3000);
+}
+
 function syncWithServerState(videoState) {
   if (!videoState || !videoState.timestamp) {
     console.warn('Invalid video state received');
@@ -46,6 +72,22 @@ function syncWithServerState(videoState) {
   // Ensure player is fully initialized
   if (!player || typeof player.getCurrentTime !== 'function') {
     console.log('Player not ready yet');
+    return;
+  }
+
+  if (Date.now() - lastServerTimestamp < 500) return;
+  
+  // Store last valid sync time
+  lastServerTimestamp = videoState.timestamp;
+
+  // Handle paused state differently
+  if (!videoState.isPlaying) {
+    if (Math.abs(player.getCurrentTime() - videoState.currentTime) > 0.5) {
+      player.seekTo(videoState.currentTime, true);
+    }
+    if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+      player.pauseVideo();
+    }
     return;
   }
 
@@ -524,6 +566,7 @@ function loadVideo(videoId) {
         player.setVolume(50);
         document.getElementById('volumeBar').value = 50;
         populatePlaybackSpeedMenu();
+        startDriftDetection(); // Start drift detection
       },
       onStateChange: (event) => {
         if (!isPlayerReady) return;
