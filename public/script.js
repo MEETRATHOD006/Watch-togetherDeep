@@ -483,11 +483,6 @@ function loadVideo(videoId) {
 
   currentVideoId = videoId; // Update to the new video ID
  
-  if (!isSyncing) {
-    socket.emit('video-loaded', { roomId, videoId });
-    console.log("video loaded emit worked")
-  }
-  
   // videoPlayer.document.close();
   if (player){
     player.g = null;
@@ -532,6 +527,12 @@ function loadVideo(videoId) {
       }
     }
   });
+  
+  if (!isSyncing) {
+    socket.emit('video-loaded', { roomId, videoId });
+    console.log("video loaded emit worked")
+  }
+  
 
   // ---------------------- Improved Progress Sync ----------------------
   setInterval(() => {
