@@ -40,13 +40,14 @@ function calculateLatency(serverTimestamp) {
 // Replace the existing setInterval with this:
 let driftCheckInterval = null;
 
+// Update the drift detection
 function startDriftDetection() {
-  if (driftCheckInterval) clearInterval(driftCheckInterval);
-  
+  clearInterval(driftCheckInterval);
   driftCheckInterval = setInterval(() => {
     if (player && !isSyncing && player.getPlayerState() === YT.PlayerState.PLAYING) {
       const currentTime = player.getCurrentTime();
-      const expectedTime = currentVideoTime + (Date.now() - lastServerTimestamp) / 1000;
+      const serverTime = rooms.get(roomId)?.videoState?.timestamp || Date.now();
+      const expectedTime = currentVideoTime + (Date.now() - serverTime) / 1000;
       
       if (Math.abs(currentTime - expectedTime) > 0.5) {
         console.log('Client drift detected, re-syncing...');
@@ -525,6 +526,20 @@ function displaySuggestions(items) {
   });
 }
 
+// Add this cleanup function
+function cleanupVideoPlayer() {
+  if (player) {
+    try {
+      player.destroy();
+    } catch (e) {
+      console.log('Player cleanup error:', e);
+    }
+  }
+  clearInterval(driftCheckInterval);
+  isPlayerReady = false;
+  isSyncing = false;
+}
+
 // Load YouTube video in the iframe
 function loadVideo(videoId) {
   if (currentVideoId === videoId) return;
@@ -544,6 +559,10 @@ function loadVideo(videoId) {
   if (player){
     player.g = null;
   }
+
+   // Clean up previous player
+    cleanupVideoPlayer();
+  
   videoPlayer.src = `about:blank`;
   videoPlayer.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1`;
   let isPlaying = true;
