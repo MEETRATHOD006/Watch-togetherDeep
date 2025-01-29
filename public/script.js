@@ -608,21 +608,21 @@ function loadVideo(videoId) {
         }, 500); // Update every 500ms
       },
       onStateChange: (event) => {
-        if (!isPlayerReady) return;
         if (isSyncing) return;
-        
         const state = event.data;
-        const currentTime = player.getCurrentTime();
         
-        // Broadcast state changes to server
-        socket.emit('video-state-update', { 
-          roomId,
-          videoState: {
-            isPlaying: state === YT.PlayerState.PLAYING,
-            currentTime: Number(player.getCurrentTime().toFixed(2)),
-            timestamp: Date.now()
-          }
-        });
+        // Debounce state changes
+        clearTimeout(stateChangeDebounce);
+        stateChangeDebounce = setTimeout(() => {
+          socket.emit('video-state-update', {
+            roomId,
+            videoState: {
+              isPlaying: state === YT.PlayerState.PLAYING,
+              currentTime: player.getCurrentTime(),
+              timestamp: Date.now()
+            }
+          });
+        }, 100);
       }
     }
   });
