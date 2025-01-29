@@ -537,7 +537,7 @@ function loadVideo(videoId) {
           roomId,
           videoState: {
             isPlaying: state === YT.PlayerState.PLAYING,
-            currentTime: currentTime,
+            currentTime: Number(player.getCurrentTime().toFixed(2)),
             timestamp: Date.now()
           }
         });
@@ -596,7 +596,7 @@ function loadVideo(videoId) {
   videoBar.addEventListener('input', () => {
     if (!player || isSyncing) return;
     
-    const newTime = videoBar.value;
+    const newTime = parseFloat(videoBar.value);
     if (Math.abs(newTime - lastSentTime) > 0.5) {
       socket.emit('video-state-update', {
         roomId,
@@ -614,11 +614,12 @@ function loadVideo(videoId) {
     if (!player || isSyncing) return;
     
     const isPlaying = player.getPlayerState() === YT.PlayerState.PLAYING;
+    const currentTime = Number(player.getCurrentTime().toFixed(2));
     socket.emit('video-state-update', {
       roomId,
       videoState: {
         isPlaying: !isPlaying,
-        currentTime: player.getCurrentTime(),
+        currentTime: currentTime,
         timestamp: Date.now()
       }
     });
