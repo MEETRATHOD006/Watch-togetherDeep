@@ -38,34 +38,59 @@ function calculateLatency(serverTimestamp) {
 }
 
 function syncWithServerState(videoState) {
-  if (!videoState || !videoState.timestamp) {
-    console.warn('Received invalid video state:', videoState);
+  // Add validation for videoState
+  if (!videoState || typeof videoState !== 'object') {
+    console.warn('Invalid video state received:', videoState);
     return;
   }
 
-  // Handle video ID changes first
-  if (videoState.videoId && videoState.videoId !== currentVideoId) {
-    loadVideo(videoState.videoId);
-    return; // Let the video load process handle further sync
+  // Validate required properties
+  if (
+    typeof videoState.timestamp !== 'number' ||
+    typeof videoState.currentTime !== 'number'
+  ) {
+    console.warn('Invalid video state properties:', videoState);
+    return;
   }
-  
-  if (!player || isSyncing) return;
-  
+
+  // Ensure player is initialized
+  if (!player || typeof player.getCurrentTime !== 'function') {
+    console.warn('YouTube player is not ready');
+    return;
+  }
+
+  if (isSyncing) return;
+
   isSyncing = true;
+
+  // Calculate latency and target time
   const latency = calculateLatency(videoState.timestamp);
-  const targetTime = videoState.currentTime + (latency / 1000);
+  const targetTime = parseFloat(videoState.currentTime) + parseFloat(latency / 1000);
+
+  // Validate targetTime
+  if (isNaN(targetTime)) {
+    console.warn('Invalid target time calculation:', {
+      currentTime: videoState.currentTime,
+      latency,
+      targetTime,
+    });
+    isSyncing = false;
+    return;
+  }
 
   // Only adjust if difference is significant (>500ms)
-  if (Math.abs(player.getCurrentTime() - targetTime) > 0.5) {
+  const currentTime = player.getCurrentTime();
+  if (Math.abs(currentTime - targetTime) > 0.5) {
+    console.log(`Adjusting playback: ${targetTime.toFixed(2)}s (${latency}ms latency)`);
     player.seekTo(targetTime, true);
-    console.log(`Adjusted playback: ${targetTime.toFixed(2)}s (${latency}ms latency)`);
   }
 
+  // Sync play/pause state
   if (videoState.isPlaying !== (player.getPlayerState() === YT.PlayerState.PLAYING)) {
     videoState.isPlaying ? player.playVideo() : player.pauseVideo();
   }
 
-  setTimeout(() => isSyncing = false, 100);
+  setTimeout(() => (isSyncing = false), 100);
 }
 
 // Function to extract room ID from URL
