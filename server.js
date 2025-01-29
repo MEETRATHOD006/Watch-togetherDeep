@@ -173,11 +173,23 @@ io.on("connection", (socket) => {
     const now = Date.now();
     
     // Only update if the new state is fresher
-    if (videoState.timestamp > room.videoState.timestamp) {
+    // For paused state, freeze the currentTime
+    if (!videoState.isPlaying) {
       room.videoState = {
-        ...videoState,
-        timestamp: now // Update with server timestamp
+        isPlaying: false,
+        currentTime: videoState.currentTime,
+        videoId: room.videoState.videoId,
+        timestamp: now
       };
+    } else {
+      // For playing state, update normally
+      if (videoState.timestamp > room.videoState.timestamp) {
+        room.videoState = {
+          ...videoState,
+          timestamp: now
+        };
+      }
+    }
 
       // Broadcast to other clients with server-adjusted time
       socket.to(roomId).emit('video-sync', {
