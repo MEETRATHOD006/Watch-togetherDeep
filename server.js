@@ -157,26 +157,26 @@ io.on("connection", (socket) => {
     const room = rooms.get(roomId);
     const now = Date.now();
   
-    // Validate and sanitize input
+    // Enhanced validation
     if (!validateVideoState(videoState) || 
-        Math.abs(now - videoState.timestamp) > MAX_TIME_DIFF) {
+        Math.abs(now - videoState.timestamp) > MAX_TIME_DIFF ||
+        videoState.timestamp <= room.videoState.timestamp) {
       return;
     }
   
-    // Accept state only if newer than current state
-    if (videoState.timestamp > room.videoState.timestamp) {
-      const adjustedState = {
-        ...videoState,
-        timestamp: now, // Override with server timestamp
-        currentTime: calculateAdjustedTime(videoState, now)
-      };
+    // Calculate adjusted time with network latency compensation
+    const adjustedTime = videoState.currentTime + ((now - videoState.timestamp) / 1000);
+    
+    // Update room state with server-controlled timestamp
+    room.videoState = {
+      isPlaying: videoState.isPlaying,
+      currentTime: adjustedTime,
+      videoId: room.videoState.videoId,
+      timestamp: now
+    };
   
-      // Update room state
-      room.videoState = adjustedState;
-      
-      // Broadcast to all except sender
-      socket.to(roomId).volatile.emit('video-sync', adjustedState);
-    }
+    // Broadcast authoritative state to all clients
+    io.to(roomId).emit('video-sync', room.videoState);
   });
 
   function calculateAdjustedTime(state, serverTimestamp) {
@@ -240,13 +240,5 @@ io.on("connection", (socket) => {
 
 
 });
-
-setInterval(() => {
-  rooms.forEach((room, roomId) => {
-    if (room.participants.size > 0) {
-      io.to(roomId).emit('video-sync', room.videoState);
-    }
-  });
-}, SYNC_INTERVAL);
 
 server.listen(9000, () => console.log("Server running on port 9000"));
