@@ -65,41 +65,40 @@ function startDriftDetection() {
 }
 
 function syncWithServerState(videoState) {
-  if (!isPlayerReady || !videoState || isSyncing) return;
+  if (!isPlayerReady || isSyncing) return;
 
-  // Calculate adjusted time with latency compensation
-  const latency = calculateLatency(videoState.timestamp);
-  const serverTime = Date.now() - latency;
-  const timeSinceUpdate = serverTime - videoState.timestamp;
-  const targetTime = videoState.currentTime + (timeSinceUpdate / 1000);
-
-  // Only sync if difference is significant
+  const now = Date.now();
+  const serverTimeDiff = now - videoState.timestamp;
+  const targetTime = videoState.currentTime + (serverTimeDiff / 1000);
   const currentTime = player.getCurrentTime();
-  if (Math.abs(currentTime - targetTime) < 0.2) return;
+  
+  // Only sync if difference is significant
+  if (Math.abs(currentTime - targetTime) < 0.1) return;
 
   isSyncing = true;
   
+  // Smart sync logic
   try {
-    // Smart seek: Only seek if difference > 1 second, otherwise let play catch up
-    if (Math.abs(currentTime - targetTime) > 1) {
+    const timeDiff = Math.abs(currentTime - targetTime);
+    const stateMismatch = videoState.isPlaying !== (player.getPlayerState() === 1);
+    
+    if (timeDiff > 0.5 || stateMismatch) {
       player.seekTo(targetTime, true);
-    }
-
-    // Match playback state
-    if (videoState.isPlaying !== (player.getPlayerState() === 1)) {
       videoState.isPlaying ? player.playVideo() : player.pauseVideo();
+    } else if (timeDiff > 0.1) {
+      // Adjust playback rate to catch up smoothly
+      const playbackRate = timeDiff > 1 ? 1.1 : 1.05;
+      player.setPlaybackRate(playbackRate);
     }
   } catch (e) {
     console.error('Sync error:', e);
   }
 
-  // Update UI immediately
+  // Force UI update
   videoBar.value = targetTime;
-  playPauseIcon.className = videoState.isPlaying 
-    ? 'fa-solid fa-pause' 
-    : 'fa-solid fa-play';
+  playPauseIcon.className = videoState.isPlaying ? 'fa-solid fa-pause' : 'fa-solid fa-play';
 
-  isSyncing = false;
+  setTimeout(() => isSyncing = false, 100);
 }
 
 // Function to extract room ID from URL
@@ -582,14 +581,16 @@ function loadVideo(videoId) {
         if (Date.now() - lastSentTime < 500) return;
         
         // Broadcast state changes to server
-        socket.emit('video-state-update', { 
-          roomId,
-          videoState: {
-            isPlaying: state === YT.PlayerState.PLAYING,
-            currentTime: currentTime,
-            timestamp: Date.now()
-          }
-        });
+        if (state !== YT.PlayerState.BUFFERING) {
+          socket.emit('video-state-update', {
+            roomId,
+            videoState: {
+              isPlaying: state === YT.PlayerState.PLAYING,
+              currentTime: currentTime,
+              timestamp: Date.now()
+            }
+          });
+        }
         lastSentTime = Date.now();
       }
     }
@@ -659,24 +660,27 @@ playPauseIcon.addEventListener('click', () => {
 });
 
 // Seek with debouncing
-let seekTimeout;
+// Replace videoBar input handler with:
+let lastSeekTime = 0;
 videoBar.addEventListener('input', () => {
   if (!player || isSyncing) return;
+  
+  const newTime = parseFloat(videoBar.value);
+  const now = Date.now();
+  
+  // Rate limit seeks (max 1 per 300ms)
+  if (now - lastSeekTime < 300) return;
+  lastSeekTime = now;
 
-  // Debounce rapid seeks
-  clearTimeout(seekTimeout);
-  seekTimeout = setTimeout(() => {
-    const newTime = parseFloat(videoBar.value);
-    socket.emit('video-state-update', {
-      roomId,
-      videoState: {
-        isPlaying: player.getPlayerState() === YT.PlayerState.PLAYING,
-        currentTime: newTime,
-        timestamp: Date.now()
+  socket.emit('video-state-update', {
+    roomId,
+    videoState: {
+      isPlaying: player.getPlayerState() === YT.PlayerState.PLAYING,
+      currentTime: newTime,
+      timestamp: Date.now()
       }
     });
-  }, 300); // 300ms debounce
-});
+  });
 }
 
 function toggleFullScreen() {
