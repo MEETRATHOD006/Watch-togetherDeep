@@ -32,9 +32,10 @@ const playbackSpeedMenu = document.getElementById('playbackSpeed-menu');
 searchbar.disabled = true;
 
 // ---------------------- Improved Sync Functions ----------------------
+// Update latency calculation (more accurate)
 function calculateLatency(serverTimestamp) {
   const now = Date.now();
-  return Math.round((now - serverTimestamp) / 2);
+  return now - serverTimestamp; // Simple one-way latency
 }
 
 // Replace the existing setInterval with this:
@@ -63,28 +64,42 @@ function startDriftDetection() {
   }, 3000);
 }
 
-// Replace existing syncWithServerState() with this
 function syncWithServerState(videoState) {
-  if (!videoState || !player || isSyncing) return;
+  if (!isPlayerReady || !videoState || isSyncing) return;
 
-  // Calculate network latency (round-trip time)
-  const now = Date.now();
-  const latency = now - videoState.timestamp; // One-way latency approximation
+  // Calculate adjusted time with latency compensation
+  const latency = calculateLatency(videoState.timestamp);
+  const serverTime = Date.now() - latency;
+  const timeSinceUpdate = serverTime - videoState.timestamp;
+  const targetTime = videoState.currentTime + (timeSinceUpdate / 1000);
 
-  // Calculate adjusted target time (server time + latency compensation)
-  const targetTime = videoState.currentTime + (latency / 1000);
+  // Only sync if difference is significant
+  const currentTime = player.getCurrentTime();
+  if (Math.abs(currentTime - targetTime) < 0.2) return;
 
-  // Only sync if difference > 0.3s to avoid micro-adjustments
-  if (Math.abs(player.getCurrentTime() - targetTime) > 0.3) {
-    isSyncing = true;
-    player.seekTo(targetTime, true);
-    setTimeout(() => isSyncing = false, 200);
+  isSyncing = true;
+  
+  try {
+    // Smart seek: Only seek if difference > 1 second, otherwise let play catch up
+    if (Math.abs(currentTime - targetTime) > 1) {
+      player.seekTo(targetTime, true);
+    }
+
+    // Match playback state
+    if (videoState.isPlaying !== (player.getPlayerState() === 1)) {
+      videoState.isPlaying ? player.playVideo() : player.pauseVideo();
+    }
+  } catch (e) {
+    console.error('Sync error:', e);
   }
 
-  // Handle play/pause states immediately
-  if (videoState.isPlaying !== (player.getPlayerState() === YT.PlayerState.PLAYING)) {
-    videoState.isPlaying ? player.playVideo() : player.pauseVideo();
-  }
+  // Update UI immediately
+  videoBar.value = targetTime;
+  playPauseIcon.className = videoState.isPlaying 
+    ? 'fa-solid fa-pause' 
+    : 'fa-solid fa-play';
+
+  isSyncing = false;
 }
 
 // Function to extract room ID from URL
@@ -560,21 +575,22 @@ function loadVideo(videoId) {
         }, 500); // Update every 500ms
       },
       onStateChange: (event) => {
-        if (!isPlayerReady) return;
-        if (isSyncing) return;
+        if (!isPlayerReady || isSyncing) return;
         
         const state = event.data;
         const currentTime = player.getCurrentTime();
+        if (Date.now() - lastSentTime < 500) return;
         
         // Broadcast state changes to server
         socket.emit('video-state-update', { 
           roomId,
           videoState: {
             isPlaying: state === YT.PlayerState.PLAYING,
-            currentTime: Number(player.getCurrentTime().toFixed(2)),
+            currentTime: currentTime,
             timestamp: Date.now()
           }
         });
+        lastSentTime = Date.now();
       }
     }
   });
@@ -645,17 +661,21 @@ playPauseIcon.addEventListener('click', () => {
 // Seek with debouncing
 let seekTimeout;
 videoBar.addEventListener('input', () => {
+  if (!player || isSyncing) return;
+
+  // Debounce rapid seeks
   clearTimeout(seekTimeout);
   seekTimeout = setTimeout(() => {
+    const newTime = parseFloat(videoBar.value);
     socket.emit('video-state-update', {
       roomId,
       videoState: {
         isPlaying: player.getPlayerState() === YT.PlayerState.PLAYING,
-        currentTime: parseFloat(videoBar.value),
+        currentTime: newTime,
         timestamp: Date.now()
       }
     });
-  }, 100); // Debounce to prevent spamming
+  }, 300); // 300ms debounce
 });
 }
 
