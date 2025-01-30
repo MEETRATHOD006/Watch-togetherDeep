@@ -36,7 +36,7 @@ const createRoomState = () => ({
 });
 
 // ---------------------- Synchronization Constants ----------------------
-const SYNC_INTERVAL = 5000; // 5 seconds
+const SYNC_INTERVAL = 1000; // 5 seconds
 const MAX_TIME_DIFF = 500; // 500ms maximum allowed latency
 
 
