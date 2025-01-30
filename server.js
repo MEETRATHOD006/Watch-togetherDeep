@@ -36,8 +36,8 @@ const createRoomState = () => ({
 });
 
 // ---------------------- Synchronization Constants ----------------------
-const SYNC_INTERVAL = 1000; // 5 seconds
-const MAX_TIME_DIFF = 500; // 500ms maximum allowed latency
+const SYNC_THRESHOLD = 0.5; // 0.5 seconds difference requires sync
+const SYNC_INTERVAL = 2000; // Sync every 2 seconds
 
 
 // Create Room
@@ -153,29 +153,40 @@ io.on("connection", (socket) => {
     const { roomId, videoState } = data;
     if (!rooms.has(roomId)) return;
   
-    // Validate state
-    if (typeof videoState.isPlaying !== 'boolean' || 
-        !Number.isFinite(videoState.currentTime)) {
-      console.warn('Invalid state update:', data);
-      return;
-    }
-  
     const room = rooms.get(roomId);
     const now = Date.now();
   
-    // Accept updates only if they're newer than the last state
-    if (videoState.timestamp > room.videoState.timestamp) {
+    // Validate state
+    if (!validateVideoState(videoState)) {
+      console.warn('Invalid state received');
+      return;
+    }
+  
+    // Only update if state is newer and beyond threshold
+    if (
+      (now - room.videoState.timestamp > MAX_TIME_DIFF) ||
+      (Math.abs(videoState.currentTime - room.videoState.currentTime) > SYNC_THRESHOLD)
+    ) {
       room.videoState = {
         isPlaying: videoState.isPlaying,
-        currentTime: videoState.currentTime + ((now - videoState.timestamp) / 1000), // Adjust for network latency
+        currentTime: videoState.currentTime,
         videoId: room.videoState.videoId,
-        timestamp: now
+        timestamp: now // Always use server timestamp
       };
   
       // Broadcast with server-adjusted time
       socket.to(roomId).emit('video-sync', room.videoState);
     }
   });
+  
+  function validateVideoState(state) {
+    return (
+      typeof state.isPlaying === 'boolean' &&
+      typeof state.currentTime === 'number' &&
+      state.currentTime >= 0 &&
+      Number.isFinite(state.currentTime)
+    );
+  }
   
   socket.on('video-loaded', (data) => {
     const { roomId, videoId } = data;
