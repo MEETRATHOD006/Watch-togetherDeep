@@ -63,64 +63,28 @@ function startDriftDetection() {
   }, 3000);
 }
 
+// Replace existing syncWithServerState() with this
 function syncWithServerState(videoState) {
-  if (!videoState || !videoState.timestamp) {
-    console.warn('Invalid video state received');
-    return;
+  if (!videoState || !player || isSyncing) return;
+
+  // Calculate network latency (round-trip time)
+  const now = Date.now();
+  const latency = now - videoState.timestamp; // One-way latency approximation
+
+  // Calculate adjusted target time (server time + latency compensation)
+  const targetTime = videoState.currentTime + (latency / 1000);
+
+  // Only sync if difference > 0.3s to avoid micro-adjustments
+  if (Math.abs(player.getCurrentTime() - targetTime) > 0.3) {
+    isSyncing = true;
+    player.seekTo(targetTime, true);
+    setTimeout(() => isSyncing = false, 200);
   }
 
-  // Ensure player is fully initialized
-  if (!player || typeof player.getCurrentTime !== 'function') {
-    console.log('Player not ready yet');
-    return;
-  }
-
-  if (Date.now() - lastServerTimestamp < 300) return;
-  
-  // Store last valid sync time
-  lastServerTimestamp = videoState.timestamp;
-
-  // Handle paused state differently
-  if (!videoState.isPlaying) {
-    if (Math.abs(player.getCurrentTime() - videoState.currentTime) > 0.1) {
-      player.seekTo(videoState.currentTime, true);
-    }
-    if (player.getPlayerState() === YT.PlayerState.PLAYING) {
-      player.pauseVideo();
-    }
-    return;
-  }
-
-  // Validate numerical values
-  // const currentTime = Number(videoState.currentTime) || 0;
-  // const latency = calculateLatency(videoState.timestamp);
-  // const targetTime = currentTime + (latency / 1000);
-  const networkLatency = Date.now() - videoState.timestamp;
-  const targetTime = videoState.currentTime + (networkLatency / 1000);
-
-  if (isSyncing) return;
-  isSyncing = true;
-
-  // Only adjust if difference is significant
-  if (Math.abs(player.getCurrentTime() - targetTime) > 0.2) {
-    console.log(`Syncing to ${targetTime.toFixed(2)}s`);
-    try {
-      player.seekTo(targetTime, true);
-    } catch (e) {
-      console.error('Seek failed:', e);
-    }
-  }
-
-  // Handle play/pause state
+  // Handle play/pause states immediately
   if (videoState.isPlaying !== (player.getPlayerState() === YT.PlayerState.PLAYING)) {
-    try {
-      videoState.isPlaying ? player.playVideo() : player.pauseVideo();
-    } catch (e) {
-      console.error('Play/pause failed:', e);
-    }
+    videoState.isPlaying ? player.playVideo() : player.pauseVideo();
   }
-
-  setTimeout(() => isSyncing = false, 200);
 }
 
 // Function to extract room ID from URL
@@ -663,38 +627,36 @@ function loadVideo(videoId) {
   });
 
   // ---------------------- Modified Event Handlers ----------------------
-  videoBar.addEventListener('input', () => {
-    if (!player || isSyncing) return;
-    
-    const newTime = parseFloat(videoBar.value);
-    if (Math.abs(newTime - lastSentTime) > 0.1) {
-      socket.emit('video-state-update', {
-        roomId,
-        videoState: {
-          isPlaying: player.getPlayerState() === YT.PlayerState.PLAYING,
-          currentTime: newTime,
-          timestamp: Date.now()
-        }
-      });
-      lastSentTime = newTime;
+  // Replace existing play/pause and seek handlers with these:
+
+// Play/Pause with server timestamp
+playPauseIcon.addEventListener('click', () => {
+  const isPlaying = player.getPlayerState() !== YT.PlayerState.PLAYING;
+  socket.emit('video-state-update', {
+    roomId,
+    videoState: {
+      isPlaying: isPlaying,
+      currentTime: player.getCurrentTime(),
+      timestamp: Date.now() // Client's current timestamp
     }
   });
-  
-  playPauseIcon.addEventListener('click', () => {
-    if (!player || isSyncing) return;
-    
-    const isPlaying = player.getPlayerState() === YT.PlayerState.PLAYING;
-    const currentTime = Number(player.getCurrentTime().toFixed(2));
+});
+
+// Seek with debouncing
+let seekTimeout;
+videoBar.addEventListener('input', () => {
+  clearTimeout(seekTimeout);
+  seekTimeout = setTimeout(() => {
     socket.emit('video-state-update', {
       roomId,
       videoState: {
-        isPlaying: !isPlaying,
-        currentTime: currentTime,
+        isPlaying: player.getPlayerState() === YT.PlayerState.PLAYING,
+        currentTime: parseFloat(videoBar.value),
         timestamp: Date.now()
       }
     });
-  });
-
+  }, 100); // Debounce to prevent spamming
+});
 }
 
 function toggleFullScreen() {
