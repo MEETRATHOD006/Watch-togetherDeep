@@ -662,7 +662,7 @@ playPauseIcon.addEventListener('click', () => {
 // Seek with debouncing
 // Replace videoBar input handler with:
 let lastSeekTime = 0;
-videoBar.addEventListener('input', () => {
+videoBar.addEventListener('change', () => {
   if (!player || isSyncing) return;
   
   const newTime = parseFloat(videoBar.value);
