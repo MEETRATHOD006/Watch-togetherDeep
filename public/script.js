@@ -75,14 +75,14 @@ function syncWithServerState(videoState) {
     return;
   }
 
-  if (Date.now() - lastServerTimestamp < 500) return;
+  if (Date.now() - lastServerTimestamp < 300) return;
   
   // Store last valid sync time
   lastServerTimestamp = videoState.timestamp;
 
   // Handle paused state differently
   if (!videoState.isPlaying) {
-    if (Math.abs(player.getCurrentTime() - videoState.currentTime) > 0.5) {
+    if (Math.abs(player.getCurrentTime() - videoState.currentTime) > 0.1) {
       player.seekTo(videoState.currentTime, true);
     }
     if (player.getPlayerState() === YT.PlayerState.PLAYING) {
@@ -92,15 +92,17 @@ function syncWithServerState(videoState) {
   }
 
   // Validate numerical values
-  const currentTime = Number(videoState.currentTime) || 0;
-  const latency = calculateLatency(videoState.timestamp);
-  const targetTime = currentTime + (latency / 1000);
+  // const currentTime = Number(videoState.currentTime) || 0;
+  // const latency = calculateLatency(videoState.timestamp);
+  // const targetTime = currentTime + (latency / 1000);
+  const networkLatency = Date.now() - videoState.timestamp;
+  const targetTime = videoState.currentTime + (networkLatency / 1000);
 
   if (isSyncing) return;
   isSyncing = true;
 
   // Only adjust if difference is significant
-  if (Math.abs(player.getCurrentTime() - targetTime) > 0.5) {
+  if (Math.abs(player.getCurrentTime() - targetTime) > 0.2) {
     console.log(`Syncing to ${targetTime.toFixed(2)}s`);
     try {
       player.seekTo(targetTime, true);
@@ -118,7 +120,7 @@ function syncWithServerState(videoState) {
     }
   }
 
-  setTimeout(() => isSyncing = false, 100);
+  setTimeout(() => isSyncing = false, 200);
 }
 
 // Function to extract room ID from URL
@@ -665,7 +667,7 @@ function loadVideo(videoId) {
     if (!player || isSyncing) return;
     
     const newTime = parseFloat(videoBar.value);
-    if (Math.abs(newTime - lastSentTime) > 0.5) {
+    if (Math.abs(newTime - lastSentTime) > 0.1) {
       socket.emit('video-state-update', {
         roomId,
         videoState: {
