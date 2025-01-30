@@ -38,6 +38,7 @@ const createRoomState = () => ({
 // ---------------------- Synchronization Constants ----------------------
 const SYNC_THRESHOLD = 0.5; // 0.5 seconds difference requires sync
 const SYNC_INTERVAL = 2000; // Sync every 2 seconds
+const MAX_TIME_DIFF = 500; // 500ms maximum allowed latency
 
 
 // Create Room
@@ -156,28 +157,32 @@ io.on("connection", (socket) => {
     const room = rooms.get(roomId);
     const now = Date.now();
   
-    // Validate state
-    if (!validateVideoState(videoState)) {
-      console.warn('Invalid state received');
+    // Validate and sanitize input
+    if (!validateVideoState(videoState) || 
+        Math.abs(now - videoState.timestamp) > MAX_TIME_DIFF) {
       return;
     }
   
-    // Only update if state is newer and beyond threshold
-    if (
-      (now - room.videoState.timestamp > MAX_TIME_DIFF) ||
-      (Math.abs(videoState.currentTime - room.videoState.currentTime) > SYNC_THRESHOLD)
-    ) {
-      room.videoState = {
-        isPlaying: videoState.isPlaying,
-        currentTime: videoState.currentTime,
-        videoId: room.videoState.videoId,
-        timestamp: now // Always use server timestamp
+    // Accept state only if newer than current state
+    if (videoState.timestamp > room.videoState.timestamp) {
+      const adjustedState = {
+        ...videoState,
+        timestamp: now, // Override with server timestamp
+        currentTime: calculateAdjustedTime(videoState, now)
       };
   
-      // Broadcast with server-adjusted time
-      socket.to(roomId).emit('video-sync', room.videoState);
+      // Update room state
+      room.videoState = adjustedState;
+      
+      // Broadcast to all except sender
+      socket.to(roomId).volatile.emit('video-sync', adjustedState);
     }
   });
+
+  function calculateAdjustedTime(state, serverTimestamp) {
+    const latency = serverTimestamp - state.timestamp;
+    return state.currentTime + (latency / 1000);
+  }
   
   function validateVideoState(state) {
     return (
