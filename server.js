@@ -148,41 +148,55 @@ io.on("connection", (socket) => {
   });
 
   // ---------------------- Video State Handling ----------------------
-  // Update video-state-update handler
   socket.on('video-state-update', (data) => {
     const { roomId, videoState } = data;
     if (!rooms.has(roomId)) return;
-  
+
+    if (
+      !roomId ||
+      !videoState ||
+      typeof videoState.isPlaying !== 'boolean' ||
+      !Number.isFinite(Number(videoState.currentTime)) // Handle both string and number inputs
+    ) {
+      console.warn('Invalid video state update:', data);
+      return;
+    }
+
+    // Convert to number if needed
+    const validatedState = {
+      isPlaying: videoState.isPlaying,
+      currentTime: Number(videoState.currentTime),
+      timestamp: videoState.timestamp
+    };
+
     const room = rooms.get(roomId);
     const now = Date.now();
     
-    // Validate state
-    if (typeof videoState.isPlaying !== 'boolean' || 
-        typeof videoState.currentTime !== 'number' ||
-        typeof videoState.timestamp !== 'number') {
-      console.warn('Invalid video state:', videoState);
-      return;
+    // Only update if the new state is fresher
+    // For paused state, freeze the currentTime
+    if (!videoState.isPlaying) {
+      room.videoState = {
+        isPlaying: false,
+        currentTime: videoState.currentTime,
+        videoId: room.videoState.videoId,
+        timestamp: now
+      };
+    } else {
+      if (videoState.timestamp > room.videoState.timestamp) {
+        room.videoState = {
+          ...videoState,
+          timestamp: now
+        };
+      }
     }
-  
-    // Only accept states newer than 500ms
-    if (now - videoState.timestamp > 500) return;
-  
-    // Update room state
-    room.videoState = {
-      isPlaying: videoState.isPlaying,
-      currentTime: videoState.currentTime,
-      videoId: room.videoState.videoId, // Preserve video ID
-      timestamp: now
-    };
-  
-    // Broadcast with server timestamp
-    socket.to(roomId).emit('video-sync', {
-      ...room.videoState,
-      timestamp: now
-    });
+
+      // Broadcast to other clients with server-adjusted time
+      socket.to(roomId).emit('video-sync', {
+        ...videoState,
+        timestamp: now
+      });
   });
   
-  // Update video-loaded handler
   socket.on('video-loaded', (data) => {
     const { roomId, videoId } = data;
     if (!rooms.has(roomId)) return;
@@ -195,9 +209,10 @@ io.on("connection", (socket) => {
       timestamp: Date.now()
     };
     
-    io.to(roomId).emit('video-load', { 
+    // Broadcast to ALL clients including the sender
+    io.to(roomId).emit('video-load', {  // Change event name
       videoId: videoId,
-      timestamp: Date.now() 
+      timestamp: Date.now()
     });
   });
     
