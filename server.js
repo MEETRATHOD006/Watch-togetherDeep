@@ -152,6 +152,9 @@ io.on("connection", (socket) => {
     const { roomId, videoState } = data;
     if (!rooms.has(roomId)) return;
 
+    const room = rooms.get(roomId);
+    const now = Date.now();
+
     if (
       !roomId ||
       !videoState ||
@@ -162,39 +165,41 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Convert to number if needed
+    // Validate and convert state
     const validatedState = {
-      isPlaying: videoState.isPlaying,
-      currentTime: Number(videoState.currentTime),
-      timestamp: videoState.timestamp
+      isPlaying: !!videoState.isPlaying,
+      currentTime: Number(videoState.currentTime) || 0,
+      videoId: room.videoState.videoId,
+      timestamp: now
     };
-
-    const room = rooms.get(roomId);
-    const now = Date.now();
     
     // Only update if the new state is fresher
     // For paused state, freeze the currentTime
-    if (!videoState.isPlaying) {
-      room.videoState = {
-        isPlaying: false,
-        currentTime: videoState.currentTime,
-        videoId: room.videoState.videoId,
-        timestamp: now
-      };
-    } else {
-      if (videoState.timestamp > room.videoState.timestamp) {
+    // Only update if newer than current state
+    if (videoState.timestamp > room.videoState.timestamp) {
+      // Special handling for paused state
+      if (!validatedState.isPlaying) {
         room.videoState = {
-          ...videoState,
+          ...validatedState,
+          isPlaying: false,
           timestamp: now
         };
+      } else {
+        room.videoState = validatedState;
       }
+      
+      // Broadcast with fresh timestamp
+      socket.to(roomId).emit('video-sync', {
+        ...room.videoState,
+        timestamp: now
+      });
     }
 
       // Broadcast to other clients with server-adjusted time
-      socket.to(roomId).emit('video-sync', {
-        ...videoState,
-        timestamp: now
-      });
+      // socket.to(roomId).emit('video-sync', {
+      //   ...videoState,
+      //   timestamp: now
+      // });
   });
   
   socket.on('video-loaded', (data) => {
